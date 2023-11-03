@@ -7,8 +7,8 @@ import os
 import logging
 import redis
 
-from telegram.ext import Filters, Updater
-from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Filters, Updater, CommandHandler, CallbackQueryHandler, CallbackContext, MessageHandler
 from environs import Env
 
 env = Env()
@@ -17,15 +17,18 @@ env.read_env()
 _database = None
 
 
-def start(update, context):
-    """
-    Хэндлер для состояния START.
-
-    Бот отвечает пользователю фразой "Привет!" и переводит его в состояние ECHO.
-    Теперь в ответ на его команды будет запускаеться хэндлер echo.
-    """
-    update.message.reply_text(text='Привет!')
-    return "ECHO"
+def start(update: Update, context: CallbackContext) -> None:
+    """Sends a message with three inline buttons attached."""
+    keyboard = [
+        [
+            InlineKeyboardButton("Option 1", callback_data='1'),
+            InlineKeyboardButton("Option 2", callback_data='2'),
+        ],
+        [InlineKeyboardButton("Option 3", callback_data='3')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text('Please choose:', reply_markup=reply_markup)
+    # return "ECHO"
 
 
 def echo(update, context):
@@ -40,6 +43,22 @@ def echo(update, context):
     return "ECHO"
 
 
+def button(update: Update, context: CallbackContext) -> None:
+    """Parses the CallbackQuery and updates the message text."""
+    query = update.callback_query
+
+    # CallbackQueries need to be answered, even if no notification to the user is needed
+    # Some clients may have trouble otherwise. See https://core.telegram.org/bots/api#callbackquery
+    query.answer()
+
+    query.edit_message_text(text=f"Selected option: {query.data}")
+
+
+def help_command(update: Update, context: CallbackContext) -> None:
+    """Displays info on how to use the bot."""
+    update.message.reply_text("Use /start to test this bot.")
+    
+    
 def handle_users_reply(update, context):
     """
     Функция, которая запускается при любом сообщении от пользователя и решает как его обработать.
@@ -98,11 +117,20 @@ def get_database_connection():
 def main():
     token = env("TELEGRAM_TOKEN")
     updater = Updater(token)
-    dispatcher = updater.dispatcher
-    dispatcher.add_handler(CallbackQueryHandler(handle_users_reply))
-    dispatcher.add_handler(MessageHandler(Filters.text, handle_users_reply))
-    dispatcher.add_handler(CommandHandler('start', handle_users_reply))
+    
+    updater.dispatcher.add_handler(CommandHandler('start', start))
+    updater.dispatcher.add_handler(CallbackQueryHandler(button))
+    updater.dispatcher.add_handler(CommandHandler('help', help_command))
+    
+    updater.dispatcher.add_handler(MessageHandler(Filters.text, handle_users_reply))
+    # updater.dispatcher.add_handler(CallbackQueryHandler(handle_users_reply))
+    # updater.dispatcher.add_handler(CommandHandler('start', handle_users_reply))
+
+    # Start the Bot
     updater.start_polling()
+
+    # Run the bot until the user presses Ctrl-C or the process receives SIGINT,
+    # SIGTERM or SIGABRT
     updater.idle()
 
 
