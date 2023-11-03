@@ -1,17 +1,18 @@
 import requests
+import tg_bot
 from environs import Env
 
 env = Env()
 env.read_env()
 
-STRAPI_TOKEN = env.str('STRAPI_TOKEN')
+# STRAPI_TOKEN = env.str('STRAPI_TOKEN')
 # DEBUG = env.bool('DEBUG', True)
 
 
 def get_products(url):
-    headers = {
-        'Authorization ': f'bearer {STRAPI_TOKEN}',
-    }
+    # headers = {
+    #     'Authorization ': f'bearer {STRAPI_TOKEN}',
+    # }
     # payload = {
     #     'key1': 'value1',
     #     'key2': 'value2'
@@ -25,9 +26,10 @@ def get_products(url):
 
 
 def main():
-    url = 'http://localhost:1337/api/products'
-    products = get_products(url)
-    print(products.content.decode('utf8'))
+    # url = 'http://localhost:1337/api/products'
+    # products = get_products(url)
+    # print(products.content.decode('utf8'))
+    tg_bot.main()
 
 
 if __name__ == '__main__':
