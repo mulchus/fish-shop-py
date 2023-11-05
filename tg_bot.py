@@ -20,7 +20,7 @@ env.read_env()
 
 _database = None
 
-cancel_reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton('назад', callback_data='cancel'),]])
+cancel_reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton('Назад', callback_data='menu'),]])
 
 
 def get_product(product_id):
@@ -33,6 +33,20 @@ def get_product(product_id):
     response = requests.get(url, params=payload)
     response.raise_for_status()
     return response
+
+
+def get_menu_keyboards():
+    products = json.loads(get_product(None).text)['data']
+    keyboard = []
+    reply_markup = None
+    for product in products:
+        keyboard.append(
+            [
+                InlineKeyboardButton(product['attributes']['title'].split(',', 1)[0], callback_data=product['id']),
+            ]
+        )
+        reply_markup = InlineKeyboardMarkup(keyboard, resize_keyboard=True)
+    return reply_markup
 
 
 def start(update: Update, context: CallbackContext, reply_markup):
@@ -55,6 +69,11 @@ def echo(update, context):
 def button(update: Update, context: CallbackContext):
     """Parses the CallbackQuery and updates the message text."""
     query = update.callback_query
+    if query.data == 'menu':
+        reply_markup = get_menu_keyboards()
+        query.bot.delete_message(query.from_user.id, query.message.message_id)
+        query.bot.send_message(query.from_user.id, 'Выберите продукт:', reply_markup=reply_markup)
+        return "HANDLE_MENU"
     # CallbackQueries need to be answered, even if no notification to the user is needed
     # Some clients may have trouble otherwise. See https://core.telegram.org/bots/api#callbackquery
     response = get_product(int(query.data))
@@ -70,8 +89,9 @@ def button(update: Update, context: CallbackContext):
         photo=image_data,
         caption=f"{product['attributes']['title']}, цена {product['attributes']['price']} руб.\n"
                 f"Описание: {product['attributes']['description']}",
+        reply_markup=cancel_reply_markup,
     )
-    return "START"
+    return "HANDLE_DESCRIPTION"
 
 
 def help_command(update: Update, context: CallbackContext) -> None:
@@ -105,10 +125,13 @@ def handle_users_reply(update, context):
         user_state = 'START'
     else:
         user_state = db.get(chat_id).decode("utf-8")
+    
+    menu_keyboards = get_menu_keyboards()
 
     states_functions = {
-        'START': start,
-        'HANDLE_MENU': handle_menu,
+        'START': lambda bot, update: start(bot, update, menu_keyboards),
+        'HANDLE_MENU': button,
+        'HANDLE_DESCRIPTION': button,
         'ECHO': echo,
     }
     state_handler = states_functions[user_state]
@@ -137,26 +160,10 @@ def get_database_connection():
 
 def main():
     token = env("TELEGRAM_TOKEN")
-    
-    products = json.loads(get_product(None).text)['data']
-    
     updater = Updater(token)
-    keyboard = []
-    for product in products:
-        keyboard.append(
-            [
-                InlineKeyboardButton(product['attributes']['title'].split(',', 1)[0], callback_data=product['id']),
-            ]
-        )
-        reply_markup = InlineKeyboardMarkup(keyboard, resize_keyboard=True)
-    
-    updater.dispatcher.add_handler(CommandHandler('start', lambda bot, update: start(bot, update, reply_markup)))
-    updater.dispatcher.add_handler(CallbackQueryHandler(button))
-    updater.dispatcher.add_handler(CommandHandler('help', help_command))
-    
+    updater.dispatcher.add_handler(CallbackQueryHandler(handle_users_reply))
     updater.dispatcher.add_handler(MessageHandler(Filters.text, handle_users_reply))
-    # updater.dispatcher.add_handler(CallbackQueryHandler(handle_users_reply))
-    # updater.dispatcher.add_handler(CommandHandler('start', handle_users_reply))
+    updater.dispatcher.add_handler(CommandHandler('start', handle_users_reply))
 
     # Start the Bot
     updater.start_polling()
