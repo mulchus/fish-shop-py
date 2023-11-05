@@ -8,10 +8,12 @@ redis==3.2.1
 import requests
 import redis
 import json
+from urllib.parse import urljoin
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Filters, Updater, CommandHandler, CallbackQueryHandler, CallbackContext, MessageHandler
 from environs import Env
+from io import BytesIO
 
 env = Env()
 env.read_env()
@@ -22,10 +24,13 @@ cancel_reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton('назад', 
 
 
 def get_product(product_id):
+    payload = {
+            'populate': 'picture',
+        }
     url = 'http://localhost:1337/api/products/'
     if product_id:
-        url = f'http://localhost:1337/api/products/{product_id}'
-    response = requests.get(url)
+        url = urljoin(url, str(product_id))
+    response = requests.get(url, params=payload)
     response.raise_for_status()
     return response
 
@@ -52,15 +57,20 @@ def button(update: Update, context: CallbackContext):
     query = update.callback_query
     # CallbackQueries need to be answered, even if no notification to the user is needed
     # Some clients may have trouble otherwise. See https://core.telegram.org/bots/api#callbackquery
-    product = json.loads(get_product(int(query.data)).text)['data']
-    # print(product)
-    query.answer()
-    query.edit_message_text(
-        text=f"{product['attributes']['title']}, цена {product['attributes']['price']} руб.\n"
-             f"Описание: {product['attributes']['description']}")
-    
-    # update.message.reply_text('Ваши действия: ', reply_markup=cancel_reply_markup)
-    # query.edit_message_text(text=f"Selected option: {query.data}")
+    response = get_product(int(query.data))
+    product = json.loads(response.text)['data']
+    image_url = urljoin('http://localhost:1337/',
+                        product['attributes']['picture']['data']['attributes']['formats']['small']['url'])
+    response = requests.get(image_url)
+    response.raise_for_status()
+    image_data = BytesIO(response.content)
+    query.bot.delete_message(query.from_user.id, query.message.message_id)
+    query.bot.send_photo(
+        chat_id=query.from_user.id,
+        photo=image_data,
+        caption=f"{product['attributes']['title']}, цена {product['attributes']['price']} руб.\n"
+                f"Описание: {product['attributes']['description']}",
+    )
     return "START"
 
 
@@ -127,7 +137,9 @@ def get_database_connection():
 
 def main():
     token = env("TELEGRAM_TOKEN")
+    
     products = json.loads(get_product(None).text)['data']
+    
     updater = Updater(token)
     keyboard = []
     for product in products:
