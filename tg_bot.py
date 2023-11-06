@@ -22,6 +22,13 @@ _database = None
 
 cancel_reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton('Назад', callback_data='menu'),]])
 
+product_reply_markup = InlineKeyboardMarkup([[
+        InlineKeyboardButton('В корзину', callback_data='add_to_cart'),
+        InlineKeyboardButton('Назад', callback_data='menu'),
+]])
+
+STRAPI_TOKEN = env('STRAPI_TOKEN')
+
 
 def get_product(product_id):
     payload = {
@@ -74,6 +81,26 @@ def button(update: Update, context: CallbackContext):
         query.bot.delete_message(query.from_user.id, query.message.message_id)
         query.bot.send_message(query.from_user.id, 'Выберите продукт:', reply_markup=reply_markup)
         return "HANDLE_MENU"
+    
+    if query.data == 'add_to_cart':
+        query.bot.delete_message(query.from_user.id, query.message.message_id)
+        cart_params = {
+            "data": {
+                "tg_id": str(query.from_user.id),
+                "cart_products": 2,
+                "users_permissions_users": 1,
+            }
+        }
+        url = 'http://localhost:1337/api/carts'
+        headers = {
+        #     'Authorization': f'Bearer {STRAPI_TOKEN}',
+            'Content-Type': 'application/json'
+        }
+        response = requests.post(url, headers=headers, json=cart_params)
+        response.raise_for_status()
+        query.bot.send_message(query.from_user.id, 'Продукт добавлен')  # , reply_markup=reply_markup)
+        return "HANDLE_MENU"
+        
     # CallbackQueries need to be answered, even if no notification to the user is needed
     # Some clients may have trouble otherwise. See https://core.telegram.org/bots/api#callbackquery
     response = get_product(int(query.data))
@@ -89,7 +116,7 @@ def button(update: Update, context: CallbackContext):
         photo=image_data,
         caption=f"{product['attributes']['title']}, цена {product['attributes']['price']} руб.\n"
                 f"Описание: {product['attributes']['description']}",
-        reply_markup=cancel_reply_markup,
+        reply_markup=product_reply_markup,
     )
     return "HANDLE_DESCRIPTION"
 
