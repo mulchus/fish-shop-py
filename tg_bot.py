@@ -73,36 +73,72 @@ def echo(update, context):
     return "ECHO"
 
 
+def create_cart(chat_id):
+    cart_params = {
+        "data": {
+            "tg_id": str(chat_id),
+        }
+    }
+    url = 'http://localhost:1337/api/carts'
+    headers = {
+        'Content-Type': 'application/json'
+    }
+    response = requests.post(url, headers=headers, json=cart_params)
+    response.raise_for_status()
+    finded_cart = json.loads(response.text)['data']
+    return finded_cart['id']
+
+
+def add_product_to_cart(cart_id, product_id):
+    cartproduct_params = {
+        "data": {
+            "product": product_id,
+            "weight": 1,
+            "cart": cart_id,
+        }
+    }
+    url = 'http://localhost:1337/api/cartproducts'
+    headers = {'Content-Type': 'application/json'}
+    response = requests.post(url, headers=headers, json=cartproduct_params)
+    response.raise_for_status()
+    
+
 def button(update: Update, context: CallbackContext):
     """Parses the CallbackQuery and updates the message text."""
+    db = get_database_connection()
     query = update.callback_query
+    reply_markup = get_menu_keyboards()
+    
     if query.data == 'menu':
-        reply_markup = get_menu_keyboards()
         query.bot.delete_message(query.from_user.id, query.message.message_id)
         query.bot.send_message(query.from_user.id, 'Выберите продукт:', reply_markup=reply_markup)
         return "HANDLE_MENU"
     
     if query.data == 'add_to_cart':
         query.bot.delete_message(query.from_user.id, query.message.message_id)
-        cart_params = {
-            "data": {
-                "tg_id": str(query.from_user.id),
-                "cart_products": 2,
-                "users_permissions_users": 1,
-            }
-        }
-        url = 'http://localhost:1337/api/carts'
-        headers = {
-        #     'Authorization': f'Bearer {STRAPI_TOKEN}',
-            'Content-Type': 'application/json'
-        }
-        response = requests.post(url, headers=headers, json=cart_params)
-        response.raise_for_status()
-        query.bot.send_message(query.from_user.id, 'Продукт добавлен')  # , reply_markup=reply_markup)
-        return "HANDLE_MENU"
         
+        # ищем корзину по chat.id
+        url = 'http://localhost:1337/api/carts'
+        payload = {'filters[tg_id][$eq]': str(query.from_user.id)}
+        response = requests.get(url, params=payload)
+        response.raise_for_status()
+        try:
+            cart_id = json.loads(response.text)['data'][0]['id']
+        except IndexError:
+            # и если не находим - создаем корзину
+            cart_id = create_cart(query.from_user.id)
+        # создаем объект CartProduct в корзине cart_id
+        add_product_to_cart(cart_id, db.get('product_selected').decode("utf-8"))
+        query.bot.send_message(
+            query.from_user.id,
+            'Продукт добавлен. Можете добавить еще один продукт или оформить заказ:',
+            reply_markup=reply_markup)
+        return "HANDLE_MENU"
+    
+    # если нажаты другие кнопки...
     # CallbackQueries need to be answered, even if no notification to the user is needed
     # Some clients may have trouble otherwise. See https://core.telegram.org/bots/api#callbackquery
+    db.set('product_selected', query.data)
     response = get_product(int(query.data))
     product = json.loads(response.text)['data']
     image_url = urljoin('http://localhost:1337/',
