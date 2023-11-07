@@ -217,9 +217,7 @@ def show_cart(update: Update, context: CallbackContext):
     message = ''
     keys_for_delete = []
     ids_for_delete = {}
-    if not cartproducts:
-        message = f'В корзине пусто.'
-    else:
+    if cartproducts:
         for num, cartproduct in enumerate(cartproducts):
             message += (f"{num+1}. "
                         f"{cartproduct['attributes']['product']['data']['attributes']['title']}, "
@@ -229,10 +227,14 @@ def show_cart(update: Update, context: CallbackContext):
             ids_for_delete[str(num+1)] = str(cartproduct['id'])
         message += f'\nДля удаления продукта из корзины нажмите его порядковый номер:'
         db.set('ids_for_delete', json.dumps(ids_for_delete))
-    reply_markup = InlineKeyboardMarkup([
-        keys_for_delete,
-        [InlineKeyboardButton('В меню', callback_data='menu')],
-    ])
+        additional_keyboard = [
+            InlineKeyboardButton('Оплатить', callback_data='pay'),
+            InlineKeyboardButton('В меню', callback_data='menu')
+        ]
+    else:
+        message = f'В корзине пусто.'
+        additional_keyboard = [InlineKeyboardButton('В меню', callback_data='menu')]
+    reply_markup = InlineKeyboardMarkup([keys_for_delete, additional_keyboard])
     query.bot.send_message(query.from_user.id, message, reply_markup=reply_markup)
     return "HANDLE_CART"
 
@@ -241,6 +243,10 @@ def handle_cart(update: Update, context: CallbackContext):
     query = update.callback_query
     if query.data == 'menu':
         return show_menu(update, context)
+    
+    if query.data == 'pay':
+        query.bot.send_message(query.from_user.id, 'Введите е-майл:')
+        return 'WAITING_EMAIL'
     
     db = get_database_connection()
     id_for_delete = json.loads(db.get('ids_for_delete').decode("utf-8"))[query.data]
@@ -261,6 +267,14 @@ def handle_cart(update: Update, context: CallbackContext):
     time.sleep(4)
     query.bot.delete_message(query.from_user.id, bot_message['message_id'])
     return show_cart(update, context)
+
+
+def waiting_email(update: Update, context: CallbackContext):
+    query = update.message
+    # query.bot.delete_message(query.from_user.id, query.message.message_id)
+    print(query.text)
+    query.bot.send_message(query.from_user.id, 'Пользователь почти добавлен в базу )))')
+    return show_menu(update, context)
 
 
 def help_command(update: Update, context: CallbackContext) -> None:
@@ -302,6 +316,7 @@ def handle_users_reply(update, context):
         'HANDLE_DESCRIPTION': handle_description,
         'SHOW_CART': show_cart,
         'HANDLE_CART': handle_cart,
+        'WAITING_EMAIL': waiting_email,
         'ECHO': echo,
     }
     state_handler = states_functions[user_state]
