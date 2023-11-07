@@ -9,6 +9,7 @@ import requests
 import redis
 import json
 from urllib.parse import urljoin
+from urllib.parse import unquote
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Filters, Updater, CommandHandler, CallbackQueryHandler, CallbackContext, MessageHandler
@@ -79,7 +80,7 @@ def get_menu_keyboards():
     return reply_markup
 
 
-def start(update: Update, context: CallbackContext):    #, reply_markup):
+def start(update: Update, context: CallbackContext):
     db = get_database_connection()
     response = find_cart(update.message.chat_id)
     try:
@@ -166,34 +167,25 @@ def button(update: Update, context: CallbackContext):
         return "HANDLE_MENU"
     
     if query.data == 'cart':
-        url = 'http://localhost:1337/api/carts'
+        url = urljoin('http://localhost:1337/api/carts/', str(db.get('cart_id').decode("utf-8")))
         payload = {
-            'filters[tg_id][$eq]': str(query.from_user.id),
-            'populate': {
-                'cardproducts': {
-                    'populate': {
-                        'products',     # : {
-                            # 'populate': 'products',
-                        # }
-                    }
-                }
-            }
+            'fields[0]': 'tg_id',
+            'populate[cartproducts][fields][0]': 'weight',
+            'populate[cartproducts][populate][product][fields][0]': 'title',
+            'populate[cartproducts][populate][product][fields][1]': 'price',
+            'populate[cartproducts][populate][product][fields][2]': 'description',
         }
         response = requests.get(url, params=payload)
         response.raise_for_status()
-        print(response.url)
-        print(response.text)
-        # cartproducts = json.loads(response.text)['data'][0]['attributes']['cartproducts']['data']
-        # print(cartproducts)
-        # products = json.loads(get_product(None).text)['data']
-        # print(products)
-        # message = ''
-        # for num, cartproduct in enumerate(cartproducts):
-        #     for product in products:
-        #         if cartproduct['id'] == product['id']:
-        #             message += (f"{num+1}. {product['title']}, {cartproduct['attributes']['weight']} кг, \n"
-        #                         f"на сумму {product['title']*cartproduct['attributes']['weight']}")
-        # print(message)
+        cartproducts = json.loads(response.text)['data']['attributes']['cartproducts']['data']
+        message = ''
+        for num, cartproduct in enumerate(cartproducts):
+            message += (f"{num+1}. "
+                        f"{cartproduct['attributes']['product']['data']['attributes']['title']}, "
+                        f"{cartproduct['attributes']['weight']} кг, "
+                        f"на сумму {cartproduct['attributes']['weight'] * cartproduct['attributes']['product']['data']['attributes']['price']} руб. \n")
+        query.bot.delete_message(query.from_user.id, query.message.message_id)
+        query.bot.send_message(query.from_user.id, message, reply_markup=cancel_reply_markup)
         return "HANDLE_MENU"
         
     # если нажаты другие кнопки...
@@ -254,7 +246,6 @@ def handle_users_reply(update, context):
     menu_keyboards = get_menu_keyboards()
 
     states_functions = {
-        # 'START': lambda bot, update: start(bot, update, menu_keyboards),
         'START': start,
         'HANDLE_MENU': button,
         'HANDLE_DESCRIPTION': button,
