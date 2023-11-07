@@ -8,6 +8,7 @@ redis==3.2.1
 import requests
 import redis
 import json
+import time
 from urllib.parse import urljoin
 # from urllib.parse import unquote
 
@@ -214,13 +215,52 @@ def show_cart(update: Update, context: CallbackContext):
     response.raise_for_status()
     cartproducts = json.loads(response.text)['data']['attributes']['cartproducts']['data']
     message = ''
-    for num, cartproduct in enumerate(cartproducts):
-        message += (f"{num+1}. "
-                    f"{cartproduct['attributes']['product']['data']['attributes']['title']}, "
-                    f"{cartproduct['attributes']['weight']} кг, "
-                    f"на сумму {cartproduct['attributes']['weight'] * cartproduct['attributes']['product']['data']['attributes']['price']} руб. \n")
-    query.bot.send_message(query.from_user.id, message, reply_markup=cancel_reply_markup)
-    return "SHOW_MENU"
+    keys_for_delete = []
+    ids_for_delete = {}
+    if not cartproducts:
+        message = f'В корзине пусто.'
+    else:
+        for num, cartproduct in enumerate(cartproducts):
+            message += (f"{num+1}. "
+                        f"{cartproduct['attributes']['product']['data']['attributes']['title']}, "
+                        f"{cartproduct['attributes']['weight']} кг, "
+                        f"на сумму {cartproduct['attributes']['weight'] * cartproduct['attributes']['product']['data']['attributes']['price']} руб. \n")
+            keys_for_delete.append(InlineKeyboardButton(str(num+1), callback_data=str(num+1)))
+            ids_for_delete[str(num+1)] = str(cartproduct['id'])
+        message += f'\nДля удаления продукта из корзины нажмите его порядковый номер:'
+        db.set('ids_for_delete', json.dumps(ids_for_delete))
+    reply_markup = InlineKeyboardMarkup([
+        keys_for_delete,
+        [InlineKeyboardButton('В меню', callback_data='menu')],
+    ])
+    query.bot.send_message(query.from_user.id, message, reply_markup=reply_markup)
+    return "HANDLE_CART"
+
+
+def handle_cart(update: Update, context: CallbackContext):
+    query = update.callback_query
+    if query.data == 'menu':
+        return show_menu(update, context)
+    
+    db = get_database_connection()
+    id_for_delete = json.loads(db.get('ids_for_delete').decode("utf-8"))[query.data]
+    url = urljoin('http://localhost:1337/api/cartproducts/', id_for_delete)
+    payload = {
+        'fields[0]': 'id',
+        'populate[product][fields][0]': 'title',
+        'populate[product][fields][1]': 'price',
+    }
+    response = requests.get(url, params=payload)
+    response.raise_for_status()
+    delete_product = json.loads(response.text)['data']['attributes']['product']['data']['attributes']
+    response = requests.delete(url)
+    response.raise_for_status()
+    bot_message = query.bot.send_message(
+        query.from_user.id,
+        f"Продукт № {query.data}. {delete_product['title']} на сумму {delete_product['price']} удален.")
+    time.sleep(4)
+    query.bot.delete_message(query.from_user.id, bot_message['message_id'])
+    return show_cart(update, context)
 
 
 def help_command(update: Update, context: CallbackContext) -> None:
@@ -261,6 +301,7 @@ def handle_users_reply(update, context):
         'HANDLE_MENU': handle_menu,
         'HANDLE_DESCRIPTION': handle_description,
         'SHOW_CART': show_cart,
+        'HANDLE_CART': handle_cart,
         'ECHO': echo,
     }
     state_handler = states_functions[user_state]
