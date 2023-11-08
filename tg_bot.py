@@ -3,26 +3,24 @@
 python-telegram-bot==13.15
 redis==3.2.1
 """
-# import os
-# import logging
 import requests
 import redis
 import json
 import time
 from urllib.parse import urljoin
-# from urllib.parse import unquote
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Filters, Updater, CommandHandler, CallbackQueryHandler, CallbackContext, MessageHandler
 from environs import Env
 from io import BytesIO
 
+
 env = Env()
 env.read_env()
 
 _database = None
 
-cancel_reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton('В меню', callback_data='menu'),]])
+cancel_reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton('В меню', callback_data='menu')]])
 
 STRAPI_TOKEN = env('STRAPI_TOKEN')
 
@@ -85,6 +83,14 @@ def echo(update, context):
     return "ECHO"
 
 
+def find_user(user_email):
+    url = 'http://localhost:1337/api/clients'
+    payload = {'filters[email][$eq]': user_email}
+    response = requests.get(url, params=payload)
+    response.raise_for_status()
+    return response
+
+
 def find_cart(chat_id):
     url = 'http://localhost:1337/api/carts'
     payload = {'filters[tg_id][$eq]': str(chat_id)}
@@ -107,6 +113,25 @@ def create_cart(chat_id):
     response.raise_for_status()
     finded_cart = json.loads(response.text)['data']
     return finded_cart['id']
+
+
+def add_user(cart_id, user_email):
+    user_params = {
+        "data": {
+            # "username": str(user_email),
+            "email": user_email,
+            "cart": str(cart_id),
+            # "password": "123456",
+            # "role": 0,
+            # "confirmed": "True",
+        }
+    }
+    url = 'http://localhost:1337/api/clients'
+    headers = {'Content-Type': 'application/json'}
+    response = requests.post(url, headers=headers, json=user_params)
+    response.raise_for_status()
+    new_user_id = json.loads(response.text)['data']
+    return new_user_id['id']
 
 
 def add_product_to_cart(cart_id, product_id):
@@ -136,10 +161,20 @@ def start(update: Update, context: CallbackContext):
 
 
 def show_menu(update: Update, context: CallbackContext):
-    query = update.callback_query
-    query.bot.delete_message(query.from_user.id, query.message.message_id)
+    if update.message:
+        update_type = update.message
+        chat_id = update.message.chat_id
+        update_type.bot.delete_message(chat_id, update_type.message_id)
+        update_type.bot.delete_message(chat_id, update_type.message_id-1)
+        update_type.bot.delete_message(chat_id, update_type.message_id-2)
+    elif update.callback_query:
+        update_type = update.callback_query
+        chat_id = update.callback_query.message.chat_id
+        update_type.bot.delete_message(chat_id, update_type.message.message_id)
+    else:
+        return "HANDLE_MENU"
     reply_markup = get_menu_keyboards()
-    query.bot.send_message(query.from_user.id, 'Выберите продукт:', reply_markup=reply_markup)
+    update_type.bot.send_message(chat_id, 'Выберите продукт:', reply_markup=reply_markup)
     return "HANDLE_MENU"
 
 
@@ -271,9 +306,24 @@ def handle_cart(update: Update, context: CallbackContext):
 
 def waiting_email(update: Update, context: CallbackContext):
     query = update.message
-    # query.bot.delete_message(query.from_user.id, query.message.message_id)
-    print(query.text)
-    query.bot.send_message(query.from_user.id, 'Пользователь почти добавлен в базу )))')
+
+    # проверка наличия пользователя в БД по e_mail
+    response = find_user(query.text)
+    user = response.json()
+    if user['data']:
+        user_id = user['data'][0]['id']
+        user_email = user['data'][0]['attributes']['email']
+        message = query.bot.send_message(query.from_user.id, f'Оплачено. :)))')
+        time.sleep(3)
+        query.bot.delete_message(query.from_user.id, message.message_id)
+    else:
+        # и если не находим - создаем юзера
+        db = get_database_connection()
+        new_user_id = add_user(db.get('cart_id').decode("utf-8"), query.text)
+        message = query.bot.send_message(query.from_user.id,
+                                         f'Пользователь добавлен в базу под ID {new_user_id}. Оплачено :)))')
+        time.sleep(3)
+        query.bot.delete_message(query.from_user.id, message.message_id)
     return show_menu(update, context)
 
 
@@ -323,12 +373,11 @@ def handle_users_reply(update, context):
     # Если вы вдруг не заметите, что python-telegram-bot перехватывает ошибки.
     # Оставляю этот try...except, чтобы код не падал молча.
     # Этот фрагмент можно переписать.
-    # try:
-    next_state = state_handler(update, context)
-    print(next_state)
-    db.set(chat_id, next_state)
-    # except Exception as err:
-    #     print(err)
+    try:
+        next_state = state_handler(update, context)
+        db.set(chat_id, next_state)
+    except Exception as err:
+        print(err)
 
 
 def get_database_connection():
