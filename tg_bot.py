@@ -20,10 +20,6 @@ env.read_env()
 
 _database = None
 
-cancel_reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton('В меню', callback_data='menu')]])
-
-STRAPI_TOKEN = env('STRAPI_TOKEN')
-
 
 def get_product_reply_markup():
     db = get_database_connection()
@@ -31,11 +27,8 @@ def get_product_reply_markup():
             InlineKeyboardButton('Добавить в корзину', callback_data='add_to_cart'),
             InlineKeyboardButton('В меню', callback_data='menu'),
     ]
-    try:
-        db.get('cart_id').decode("utf-8")
+    if db.exists('cart_id'):
         keyboard.append(InlineKeyboardButton('Перейти в корзину', callback_data='cart'))
-    except AttributeError:
-        pass
     return InlineKeyboardMarkup([keyboard])
 
 
@@ -53,38 +46,19 @@ def get_product(product_id):
 
 def get_menu_keyboards():
     db = get_database_connection()
-    try:
-        cart_id = db.get('cart_id').decode("utf-8")
-    except AttributeError:
-        cart_id = None
-    products = json.loads(get_product(None).text)['data']
+    products = get_product(None).json()['data']
     keyboard = []
     for product in products:
-        keyboard.append(
-            [
-                InlineKeyboardButton(product['attributes']['title'].split(',', 1)[0], callback_data=product['id']),
-            ]
-        )
-    if cart_id:
+        keyboard.append([
+            InlineKeyboardButton(product['attributes']['title'].split(',', 1)[0], callback_data=product['id']),
+        ])
+    if db.exists('cart_id'):
         keyboard.append([InlineKeyboardButton('Перейти в корзину', callback_data='cart')])
-    reply_markup = InlineKeyboardMarkup(keyboard, resize_keyboard=True)
-    return reply_markup
-
-
-def echo(update, context):
-    """
-    Хэндлер для состояния ECHO.
-
-    Бот отвечает пользователю тем же, что пользователь ему написал.
-    Оставляет пользователя в состоянии ECHO.
-    """
-    users_reply = update.message.text
-    update.message.reply_text(users_reply)
-    return "ECHO"
+    return InlineKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
 def find_user(user_email):
-    url = 'http://localhost:1337/api/clients'
+    url = 'http://localhost:1337/api/users'
     payload = {'filters[email][$eq]': user_email}
     response = requests.get(url, params=payload)
     response.raise_for_status()
@@ -111,27 +85,23 @@ def create_cart(chat_id):
     }
     response = requests.post(url, headers=headers, json=cart_params)
     response.raise_for_status()
-    finded_cart = json.loads(response.text)['data']
-    return finded_cart['id']
+    return response.json()['data']['id']
 
 
 def add_user(cart_id, user_email):
     user_params = {
-        "data": {
-            # "username": str(user_email),
-            "email": user_email,
-            "cart": str(cart_id),
-            # "password": "123456",
-            # "role": 0,
-            # "confirmed": "True",
+        "username": user_email,
+        "email": user_email,
+        "cart": cart_id,
+        "password": "111111",
+        "role": 0,
+        "confirmed": "True",
         }
-    }
-    url = 'http://localhost:1337/api/clients'
+    url = 'http://localhost:1337/api/users'
     headers = {'Content-Type': 'application/json'}
     response = requests.post(url, headers=headers, json=user_params)
     response.raise_for_status()
-    new_user_id = json.loads(response.text)['data']
-    return new_user_id['id']
+    return response.json()['id']
 
 
 def add_product_to_cart(cart_id, product_id):
@@ -146,17 +116,16 @@ def add_product_to_cart(cart_id, product_id):
     headers = {'Content-Type': 'application/json'}
     response = requests.post(url, headers=headers, json=cartproduct_params)
     response.raise_for_status()
-
+    
 
 def start(update: Update, context: CallbackContext):
     db = get_database_connection()
     response = find_cart(update.message.chat_id)
     try:
-        cart_id = json.loads(response.text)['data'][0]['id']
+        cart_id = response.json()['data'][0]['id']
         db.set('cart_id', cart_id)
     finally:
-        reply_markup = get_menu_keyboards()
-        update.message.reply_text('Выберите продукт:', reply_markup=reply_markup)
+        update.message.reply_text('Выберите продукт:', reply_markup=get_menu_keyboards())
         return "HANDLE_MENU"
 
 
@@ -188,13 +157,12 @@ def handle_menu(update: Update, context: CallbackContext):
     query.bot.delete_message(query.from_user.id, query.message.message_id)
     db.set('product_selected', query.data)
     response = get_product(int(query.data))
-    product = json.loads(response.text)['data']
+    product = response.json()['data']
     image_url = urljoin('http://localhost:1337/',
                         product['attributes']['picture']['data']['attributes']['formats']['small']['url'])
     response = requests.get(image_url)
     response.raise_for_status()
     image_data = BytesIO(response.content)
-    get_product_reply_markup()
     query.bot.send_photo(
         chat_id=query.from_user.id,
         photo=image_data,
@@ -216,21 +184,18 @@ def handle_description(update: Update, context: CallbackContext):
         return show_cart(update, context)
     
     query.bot.delete_message(query.from_user.id, query.message.message_id)
-    response = find_cart(query.from_user.id)
-    try:
-        cart_id = json.loads(response.text)['data'][0]['id']
-    except IndexError:
-        # и если не находим - создаем корзину
+    if db.exists('cart_id'):
+        cart_id = db.get('cart_id').decode("utf-8")
+    else:
         cart_id = create_cart(query.from_user.id)
-    db.set('cart_id', cart_id)
+        db.set('cart_id', cart_id)
 
     # создаем объект CartProduct в корзине cart_id
     add_product_to_cart(cart_id, db.get('product_selected').decode("utf-8"))
-    reply_markup = get_menu_keyboards()
     query.bot.send_message(
         query.from_user.id,
         'Продукт добавлен. Можете добавить еще один продукт или оформить заказ через корзину.',
-        reply_markup=reply_markup)
+        reply_markup=get_menu_keyboards())
     return "HANDLE_MENU"
 
 
@@ -248,10 +213,11 @@ def show_cart(update: Update, context: CallbackContext):
     }
     response = requests.get(url, params=payload)
     response.raise_for_status()
-    cartproducts = json.loads(response.text)['data']['attributes']['cartproducts']['data']
+    cartproducts = response.json()['data']['attributes']['cartproducts']['data']
     message = ''
     keys_for_delete = []
     ids_for_delete = {}
+    pay_button = None
     if cartproducts:
         for num, cartproduct in enumerate(cartproducts):
             message += (f"{num+1}. "
@@ -262,20 +228,22 @@ def show_cart(update: Update, context: CallbackContext):
             ids_for_delete[str(num+1)] = str(cartproduct['id'])
         message += f'\nДля удаления продукта из корзины нажмите его порядковый номер:'
         db.set('ids_for_delete', json.dumps(ids_for_delete))
-        additional_keyboard = [
-            InlineKeyboardButton('Оплатить', callback_data='pay'),
-            InlineKeyboardButton('В меню', callback_data='menu')
-        ]
+        pay_button = InlineKeyboardButton('Оплатить', callback_data='pay')
     else:
         message = f'В корзине пусто.'
-        additional_keyboard = [InlineKeyboardButton('В меню', callback_data='menu')]
-    reply_markup = InlineKeyboardMarkup([keys_for_delete, additional_keyboard])
-    query.bot.send_message(query.from_user.id, message, reply_markup=reply_markup)
+    additional_keyboard = [InlineKeyboardButton('В меню', callback_data='menu')]
+    if pay_button:
+        additional_keyboard.append(pay_button)
+    query.bot.send_message(
+        query.from_user.id,
+        message,
+        reply_markup=InlineKeyboardMarkup([keys_for_delete, additional_keyboard]))
     return "HANDLE_CART"
 
 
 def handle_cart(update: Update, context: CallbackContext):
     query = update.callback_query
+    
     if query.data == 'menu':
         return show_menu(update, context)
     
@@ -293,7 +261,7 @@ def handle_cart(update: Update, context: CallbackContext):
     }
     response = requests.get(url, params=payload)
     response.raise_for_status()
-    delete_product = json.loads(response.text)['data']['attributes']['product']['data']['attributes']
+    delete_product = response.json()['data']['attributes']['product']['data']['attributes']
     response = requests.delete(url)
     response.raise_for_status()
     bot_message = query.bot.send_message(
@@ -306,13 +274,18 @@ def handle_cart(update: Update, context: CallbackContext):
 
 def waiting_email(update: Update, context: CallbackContext):
     query = update.message
-
+    # проверка e_mail - необходимо улучшить до регулярного выражения
+    if not ('@' and '.') in query.text:
+        message = query.bot.send_message(query.from_user.id,
+                                         f'E-mail введен с ошибкой. Повторите ввод.')
+        time.sleep(5)
+        query.bot.delete_message(query.from_user.id, message.message_id)
+        return 'WAITING_EMAIL'
+        
     # проверка наличия пользователя в БД по e_mail
     response = find_user(query.text)
     user = response.json()
-    if user['data']:
-        user_id = user['data'][0]['id']
-        user_email = user['data'][0]['attributes']['email']
+    if user:
         message = query.bot.send_message(query.from_user.id, f'Оплачено. :)))')
         time.sleep(3)
         query.bot.delete_message(query.from_user.id, message.message_id)
@@ -320,8 +293,9 @@ def waiting_email(update: Update, context: CallbackContext):
         # и если не находим - создаем юзера
         db = get_database_connection()
         new_user_id = add_user(db.get('cart_id').decode("utf-8"), query.text)
-        message = query.bot.send_message(query.from_user.id,
-                                         f'Пользователь добавлен в базу под ID {new_user_id}. Оплачено :)))')
+        message = query.bot.send_message(
+            query.from_user.id,
+            f'Пользователь добавлен в базу под ID {new_user_id}. Оплачено :)))')
         time.sleep(3)
         query.bot.delete_message(query.from_user.id, message.message_id)
     return show_menu(update, context)
@@ -329,7 +303,7 @@ def waiting_email(update: Update, context: CallbackContext):
 
 def help_command(update: Update, context: CallbackContext) -> None:
     """Displays info on how to use the bot."""
-    update.message.reply_text("Use /start to test this bot.")
+    update.message.reply_text("Use /start to start.")
     
     
 def handle_users_reply(update, context):
@@ -367,17 +341,18 @@ def handle_users_reply(update, context):
         'SHOW_CART': show_cart,
         'HANDLE_CART': handle_cart,
         'WAITING_EMAIL': waiting_email,
-        'ECHO': echo,
     }
     state_handler = states_functions[user_state]
     # Если вы вдруг не заметите, что python-telegram-bot перехватывает ошибки.
     # Оставляю этот try...except, чтобы код не падал молча.
     # Этот фрагмент можно переписать.
-    try:
-        next_state = state_handler(update, context)
-        db.set(chat_id, next_state)
-    except Exception as err:
-        print(err)
+    # try:
+    #     next_state = state_handler(update, context)
+    #     db.set(chat_id, next_state)
+    # except Exception as err:
+    #     print(err)
+    next_state = state_handler(update, context)
+    db.set(chat_id, next_state)
 
 
 def get_database_connection():
