@@ -5,7 +5,8 @@
 
 [Установите Python](https://www.python.org/), если этого ещё не сделали.
 
-Проверьте, что `python` установлен и корректно настроен. Запустите его в командной строке:
+Проверьте, что `python` установлен и корректно настроен.  
+Запустите его в командной строке:
 ```sh
 python --version
 ```
@@ -51,12 +52,18 @@ yarn develop
 ```
 В Content-Type Builder создайте сущности и зависимости между ними согласно следующим скриншотам:  
 cart
+![cart entity](https://github.com/mulchus/fish-shop-py/assets/111083714/7ca15b3d-c13a-4df6-9200-afa5b7a2b81f)
 
 product
+![product entity](https://github.com/mulchus/fish-shop-py/assets/111083714/d58b1de2-59a3-443f-b340-4c205fb015c8)
 
 cartproduct
+![cartproduct entity](https://github.com/mulchus/fish-shop-py/assets/111083714/e0fe36a9-af78-4ae3-a3fe-53b94aaab2aa)
 
 relations
+![cartproduct relations](https://github.com/mulchus/fish-shop-py/assets/111083714/7e1fc30d-90dd-4336-a508-50b85acacf16)
+![cartproduct relations 2](https://github.com/mulchus/fish-shop-py/assets/111083714/89c579a7-12b5-4bbe-b204-551b8a2d1fb2)
+![cart relations](https://github.com/mulchus/fish-shop-py/assets/111083714/d1f0f987-5deb-48f2-b61a-416de8216dae)
 
 
 ## Установка хранилища Redis
@@ -73,7 +80,7 @@ python tg_bot.py
 
 
 ## Пример работы бота
-
+![fish-shop-bot](https://github.com/mulchus/fish-shop-py/assets/111083714/f6ca4305-9f4b-4623-967a-f69af9ad3f19)
 
 
 ## Цели проекта
