@@ -20,16 +20,17 @@ from io import BytesIO
 
 
 _database = None
+_strapi_url = ''
 
 
 def start(update: Update, context: CallbackContext):
     db = get_database_connection()
-    response = functions.find_cart(update.message.chat_id)
+    response = functions.find_cart(update.message.chat_id, _strapi_url)
     try:
         cart_id = response.json()['data'][0]['id']
         db.set('cart_id', cart_id)
     finally:
-        update.message.reply_text('Выберите продукт:', reply_markup=keyboards.get_menu_keyboards())
+        update.message.reply_text('Выберите продукт:', reply_markup=keyboards.get_menu_keyboards(_strapi_url))
         return "HANDLE_MENU"
 
 
@@ -46,12 +47,13 @@ def show_menu(update: Update, context: CallbackContext):
         update_type.bot.delete_message(chat_id, update_type.message.message_id)
     else:
         return "HANDLE_MENU"
-    reply_markup = keyboards.get_menu_keyboards()
+    reply_markup = keyboards.get_menu_keyboards(_strapi_url)
     update_type.bot.send_message(chat_id, 'Выберите продукт:', reply_markup=reply_markup)
     return "HANDLE_MENU"
 
 
 def handle_menu(update: Update, context: CallbackContext):
+    global _strapi_url
     db = get_database_connection()
     query = update.callback_query
 
@@ -60,9 +62,9 @@ def handle_menu(update: Update, context: CallbackContext):
     
     query.bot.delete_message(query.from_user.id, query.message.message_id)
     db.set('product_selected', query.data)
-    response = functions.get_product(int(query.data))
+    response = functions.get_product(int(query.data), _strapi_url)
     product = response.json()['data']
-    image_url = urljoin('http://localhost:1337/',
+    image_url = urljoin(_strapi_url,
                         product['attributes']['picture']['data']['attributes']['formats']['small']['url'])
     response = requests.get(image_url)
     response.raise_for_status()
@@ -91,23 +93,24 @@ def handle_description(update: Update, context: CallbackContext):
     if db.exists('cart_id'):
         cart_id = db.get('cart_id').decode("utf-8")
     else:
-        cart_id = functions.create_cart(query.from_user.id)
+        cart_id = functions.create_cart(query.from_user.id, _strapi_url)
         db.set('cart_id', cart_id)
 
     # создаем объект CartProduct в корзине cart_id
-    functions.add_product_to_cart(cart_id, db.get('product_selected').decode("utf-8"))
+    functions.add_product_to_cart(cart_id, db.get('product_selected').decode("utf-8"), _strapi_url)
     query.bot.send_message(
         query.from_user.id,
         'Продукт добавлен. Можете добавить еще один продукт или оформить заказ через корзину.',
-        reply_markup=keyboards.get_menu_keyboards())
+        reply_markup=keyboards.get_menu_keyboards(_strapi_url))
     return "HANDLE_MENU"
 
 
 def show_cart(update: Update, context: CallbackContext):
+    global _strapi_url
     db = get_database_connection()
     query = update.callback_query
     query.bot.delete_message(query.from_user.id, query.message.message_id)
-    url = urljoin('http://localhost:1337/api/carts/', str(db.get('cart_id').decode("utf-8")))
+    url = urljoin(f'{_strapi_url}api/carts/', str(db.get('cart_id').decode("utf-8")))
     payload = {
         'fields[0]': 'tg_id',
         'populate[cartproducts][fields][0]': 'weight',
@@ -157,7 +160,7 @@ def handle_cart(update: Update, context: CallbackContext):
     
     db = get_database_connection()
     id_for_delete = json.loads(db.get('ids_for_delete').decode("utf-8"))[query.data]
-    url = urljoin('http://localhost:1337/api/cartproducts/', id_for_delete)
+    url = urljoin(f'{_strapi_url}api/cartproducts/', id_for_delete)
     payload = {
         'fields[0]': 'id',
         'populate[product][fields][0]': 'title',
@@ -187,7 +190,7 @@ def waiting_email(update: Update, context: CallbackContext):
         return 'WAITING_EMAIL'
         
     # проверка наличия пользователя в БД по e_mail
-    response = functions.find_user(query.text)
+    response = functions.find_user(query.text, _strapi_url)
     user = response.json()
     if user:
         message = query.bot.send_message(query.from_user.id, f'Оплачено. :)))')
@@ -196,7 +199,7 @@ def waiting_email(update: Update, context: CallbackContext):
     else:
         # и если не находим - создаем юзера
         db = get_database_connection()
-        new_user_id = functions.add_user(db.get('cart_id').decode("utf-8"), query.text)
+        new_user_id = functions.add_user(db.get('cart_id').decode("utf-8"), query.text, _strapi_url)
         message = query.bot.send_message(
             query.from_user.id,
             f'Пользователь добавлен в базу под ID {new_user_id}. Оплачено :)))')
@@ -273,9 +276,11 @@ def get_database_connection():
 
 
 def main():
+    global _strapi_url
     env = Env()
     env.read_env()
-    token = env("TELEGRAM_TOKEN")
+    token = env('TELEGRAM_TOKEN')
+    _strapi_url = env('STRAPI_URL', 'http://localhost:1337/')
     updater = Updater(token)
     updater.dispatcher.add_handler(CallbackQueryHandler(handle_users_reply))
     updater.dispatcher.add_handler(MessageHandler(Filters.text, handle_users_reply))

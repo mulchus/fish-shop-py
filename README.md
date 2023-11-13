@@ -41,11 +41,12 @@ pip install -r requirements.txt
 - `DATABASE_PASSWORD=`
 - `DATABASE_HOST=localhost`
 - `DATABASE_PORT=6379`
+- `STRAPI_URL` - основной URL-адрес CMS Strapi (см. ниже), по умолчанию http://localhost:1337/
 
 
-## Установка и создание проекта в Stripe
+## Установка и создание проекта в Strapi
 
-Установите и создайте проект в Stripe согласно [инструкции](https://docs.strapi.io/dev-docs/installation/cli)  
+Установите и создайте проект в CMS Strapi согласно [инструкции](https://docs.strapi.io/dev-docs/installation/cli)  
 Запустите проект 
 ```shell
 yarn develop
