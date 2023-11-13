@@ -24,6 +24,7 @@ _strapi_url = ''
 
 
 def start(update: Update, context: CallbackContext):
+    update.message.bot.delete_message(update.message.chat_id, update.message.message_id)
     db = get_database_connection()
     cart = functions.find_cart(update.message.chat_id, _strapi_url)
     try:
@@ -35,22 +36,30 @@ def start(update: Update, context: CallbackContext):
 
 
 def show_menu(update: Update, context: CallbackContext):
-    reply_markup = keyboards.get_menu_keyboards(_strapi_url)
+    db = get_database_connection()
     if update.message:
         update_type = update.message
         chat_id = update.message.chat_id
-        update_type.bot.send_message(chat_id, 'Выберите продукт:', reply_markup=reply_markup)
-        try:
-            update_type.bot.delete_message(chat_id, update_type.message_id)
-            update_type.bot.delete_message(chat_id, update_type.message_id-1)
-            update_type.bot.delete_message(chat_id, update_type.message_id-2)
-        except error.BadRequest:
-            pass
-    elif update.callback_query:
+        last_message_id = update.message.message_id
+    else:
         update_type = update.callback_query
         chat_id = update.callback_query.message.chat_id
-        update_type.bot.send_message(chat_id, 'Выберите продукт:', reply_markup=reply_markup)
-        update_type.bot.delete_message(chat_id, update_type.message.message_id)
+        last_message_id = update.callback_query.message.message_id
+    reply_markup = keyboards.get_menu_keyboards(_strapi_url)
+    update_type.bot.send_message(chat_id, 'Выберите продукт:', reply_markup=reply_markup)
+
+    try:
+        first_message_id = int(db.get('first_message_id').decode("utf-8"))
+        for message_id in range(first_message_id, last_message_id+2):
+            try:
+                update_type.bot.delete_message(chat_id, message_id)
+            except error.BadRequest:
+                pass
+            finally:
+                db.set('first_message_id', '')
+    except AttributeError:
+        update_type.bot.delete_message(chat_id, last_message_id)
+
     return "HANDLE_MENU"
 
 
@@ -89,7 +98,6 @@ def handle_description(update: Update, context: CallbackContext):
     
     if query.data == 'cart':
         return show_cart(update, context)
-
 
     if db.exists('cart_id'):
         cart_id = db.get('cart_id').decode("utf-8")
@@ -155,12 +163,14 @@ def handle_cart(update: Update, context: CallbackContext):
     
     if query.data == 'menu':
         return show_menu(update, context)
+
+    db = get_database_connection()
     
     if query.data == 'pay':
+        db.set('first_message_id', query.message.message_id)
         query.bot.send_message(query.from_user.id, 'Введите е-майл:')
         return 'WAITING_EMAIL'
     
-    db = get_database_connection()
     id_for_delete = json.loads(db.get('ids_for_delete').decode("utf-8"))[query.data]
     url = urljoin(f'{_strapi_url}api/cartproducts/', id_for_delete)
     payload = {
@@ -187,8 +197,8 @@ def waiting_email(update: Update, context: CallbackContext):
     if not ('@' and '.') in query.text:
         message = query.bot.send_message(query.from_user.id,
                                          f'E-mail введен с ошибкой. Повторите ввод.')
-        time.sleep(5)
-        query.bot.delete_message(query.from_user.id, message.message_id)
+        # time.sleep(5)
+        # query.bot.delete_message(query.from_user.id, message.message_id)
         return 'WAITING_EMAIL'
         
     # проверка наличия пользователя в БД по e_mail
@@ -202,8 +212,8 @@ def waiting_email(update: Update, context: CallbackContext):
         message = query.bot.send_message(
             query.from_user.id,
             f'Пользователь добавлен в базу под ID {new_user_id}. Оплачено :)))')
-    time.sleep(3)
-    query.bot.delete_message(query.from_user.id, message.message_id)
+    # time.sleep(3)
+    # query.bot.delete_message(query.from_user.id, message.message_id)
     return show_menu(update, context)
 
 
@@ -252,11 +262,11 @@ def handle_users_reply(update, context):
     # Если вы вдруг не заметите, что python-telegram-bot перехватывает ошибки.
     # Оставляю этот try...except, чтобы код не падал молча.
     # Этот фрагмент можно переписать.
-    try:
-        next_state = state_handler(update, context)
-        db.set(chat_id, next_state)
-    except Exception as err:
-        print(err)
+    # try:
+    next_state = state_handler(update, context)
+    db.set(chat_id, next_state)
+    # except Exception as err:
+    #     print(err)
 
 
 def get_database_connection():
