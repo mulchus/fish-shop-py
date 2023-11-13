@@ -13,7 +13,7 @@ import functions
 from urllib.parse import urljoin
 
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, error
 from telegram.ext import Filters, Updater, CommandHandler, CallbackQueryHandler, CallbackContext, MessageHandler
 from environs import Env
 from io import BytesIO
@@ -38,9 +38,12 @@ def show_menu(update: Update, context: CallbackContext):
     if update.message:
         update_type = update.message
         chat_id = update.message.chat_id
-        update_type.bot.delete_message(chat_id, update_type.message_id)
-        update_type.bot.delete_message(chat_id, update_type.message_id-1)
-        update_type.bot.delete_message(chat_id, update_type.message_id-2)
+        try:
+            update_type.bot.delete_message(chat_id, update_type.message_id)
+            update_type.bot.delete_message(chat_id, update_type.message_id-1)
+            update_type.bot.delete_message(chat_id, update_type.message_id-2)
+        except error.BadRequest:
+            pass
     elif update.callback_query:
         update_type = update.callback_query
         chat_id = update.callback_query.message.chat_id
