@@ -25,9 +25,9 @@ _strapi_url = ''
 
 def start(update: Update, context: CallbackContext):
     db = get_database_connection()
-    response = functions.find_cart(update.message.chat_id, _strapi_url)
+    cart = functions.find_cart(update.message.chat_id, _strapi_url)
     try:
-        cart_id = response.json()['data'][0]['id']
+        cart_id = cart.json()['data'][0]['id']
         db.set('cart_id', cart_id)
     finally:
         update.message.reply_text('Выберите продукт:', reply_markup=keyboards.get_menu_keyboards(_strapi_url))
@@ -62,13 +62,12 @@ def handle_menu(update: Update, context: CallbackContext):
     
     query.bot.delete_message(query.from_user.id, query.message.message_id)
     db.set('product_selected', query.data)
-    response = functions.get_product(int(query.data), _strapi_url)
-    product = response.json()['data']
+    product = functions.get_product(int(query.data), _strapi_url)
     image_url = urljoin(_strapi_url,
                         product['attributes']['picture']['data']['attributes']['formats']['small']['url'])
-    response = requests.get(image_url)
-    response.raise_for_status()
-    image_data = BytesIO(response.content)
+    image = requests.get(image_url)
+    image.raise_for_status()
+    image_data = BytesIO(image.content)
     query.bot.send_photo(
         chat_id=query.from_user.id,
         photo=image_data,
@@ -190,8 +189,7 @@ def waiting_email(update: Update, context: CallbackContext):
         return 'WAITING_EMAIL'
         
     # проверка наличия пользователя в БД по e_mail
-    response = functions.find_user(query.text, _strapi_url)
-    user = response.json()
+    user = functions.find_user(query.text, _strapi_url)
     if user:
         message = query.bot.send_message(query.from_user.id, f'Оплачено. :)))')
         time.sleep(3)
@@ -253,11 +251,11 @@ def handle_users_reply(update, context):
     # Если вы вдруг не заметите, что python-telegram-bot перехватывает ошибки.
     # Оставляю этот try...except, чтобы код не падал молча.
     # Этот фрагмент можно переписать.
-    try:
-        next_state = state_handler(update, context)
-        db.set(chat_id, next_state)
-    except Exception as err:
-        print(err)
+    # try:
+    next_state = state_handler(update, context)
+    db.set(chat_id, next_state)
+    # except Exception as err:
+    #     print(err)
 
 
 def get_database_connection():

@@ -5,7 +5,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 def get_menu_keyboards(strapi_url):
     db = get_database_connection()
-    products = get_product(None, strapi_url).json()['data']
+    products = get_product(None, strapi_url)
     keyboard = []
     for product in products:
         keyboard.append([

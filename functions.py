@@ -12,7 +12,7 @@ def get_product(product_id, strapi_url):
         url = urljoin(url, str(product_id))
     response = requests.get(url, params=payload)
     response.raise_for_status()
-    return response
+    return response.json()['data']
 
 
 def find_user(user_email, strapi_url):
@@ -20,7 +20,7 @@ def find_user(user_email, strapi_url):
     payload = {'filters[email][$eq]': user_email}
     response = requests.get(url, params=payload)
     response.raise_for_status()
-    return response
+    return response.json()
 
 
 def find_cart(chat_id, strapi_url):
