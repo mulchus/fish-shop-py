@@ -346,13 +346,11 @@ def handle_users_reply(update, context):
     # Если вы вдруг не заметите, что python-telegram-bot перехватывает ошибки.
     # Оставляю этот try...except, чтобы код не падал молча.
     # Этот фрагмент можно переписать.
-    # try:
-    #     next_state = state_handler(update, context)
-    #     db.set(chat_id, next_state)
-    # except Exception as err:
-    #     print(err)
-    next_state = state_handler(update, context)
-    db.set(chat_id, next_state)
+    try:
+        next_state = state_handler(update, context)
+        db.set(chat_id, next_state)
+    except Exception as err:
+        print(err)
 
 
 def get_database_connection():
