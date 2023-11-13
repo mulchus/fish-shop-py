@@ -50,14 +50,16 @@ def show_menu(update: Update, context: CallbackContext):
 
     try:
         first_message_id = int(db.get('first_message_id').decode("utf-8"))
-        for message_id in range(first_message_id, last_message_id+2):
+        last_message_id = int(db.get('last_message_id').decode("utf-8"))
+        for message_id in range(first_message_id, last_message_id+1):
             try:
                 update_type.bot.delete_message(chat_id, message_id)
             except error.BadRequest:
                 pass
             finally:
                 db.set('first_message_id', '')
-    except AttributeError:
+                db.set('last_message_id', '')
+    except (AttributeError, ValueError):
         update_type.bot.delete_message(chat_id, last_message_id)
 
     return "HANDLE_MENU"
@@ -195,25 +197,22 @@ def waiting_email(update: Update, context: CallbackContext):
     query = update.message
     # проверка e_mail - необходимо улучшить до регулярного выражения
     if not ('@' and '.') in query.text:
-        message = query.bot.send_message(query.from_user.id,
-                                         f'E-mail введен с ошибкой. Повторите ввод.')
-        # time.sleep(5)
-        # query.bot.delete_message(query.from_user.id, message.message_id)
+        query.bot.send_message(query.from_user.id,
+                               f'E-mail введен с ошибкой. Повторите ввод.')
         return 'WAITING_EMAIL'
         
     # проверка наличия пользователя в БД по e_mail
+    db = get_database_connection()
     user = functions.find_user(query.text, _strapi_url)
     if user:
         message = query.bot.send_message(query.from_user.id, f'Оплачено. :)))')
     else:
         # и если не находим - создаем юзера
-        db = get_database_connection()
         new_user_id = functions.add_user(db.get('cart_id').decode("utf-8"), query.text, _strapi_url)
         message = query.bot.send_message(
             query.from_user.id,
             f'Пользователь добавлен в базу под ID {new_user_id}. Оплачено :)))')
-    # time.sleep(3)
-    # query.bot.delete_message(query.from_user.id, message.message_id)
+    db.set('last_message_id', message['message_id'])
     return show_menu(update, context)
 
 
@@ -262,11 +261,11 @@ def handle_users_reply(update, context):
     # Если вы вдруг не заметите, что python-telegram-bot перехватывает ошибки.
     # Оставляю этот try...except, чтобы код не падал молча.
     # Этот фрагмент можно переписать.
-    # try:
-    next_state = state_handler(update, context)
-    db.set(chat_id, next_state)
-    # except Exception as err:
-    #     print(err)
+    try:
+        next_state = state_handler(update, context)
+        db.set(chat_id, next_state)
+    except Exception as err:
+        print(err)
 
 
 def get_database_connection():
