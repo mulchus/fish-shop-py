@@ -35,9 +35,11 @@ def start(update: Update, context: CallbackContext):
 
 
 def show_menu(update: Update, context: CallbackContext):
+    reply_markup = keyboards.get_menu_keyboards(_strapi_url)
     if update.message:
         update_type = update.message
         chat_id = update.message.chat_id
+        update_type.bot.send_message(chat_id, 'Выберите продукт:', reply_markup=reply_markup)
         try:
             update_type.bot.delete_message(chat_id, update_type.message_id)
             update_type.bot.delete_message(chat_id, update_type.message_id-1)
@@ -47,11 +49,8 @@ def show_menu(update: Update, context: CallbackContext):
     elif update.callback_query:
         update_type = update.callback_query
         chat_id = update.callback_query.message.chat_id
+        update_type.bot.send_message(chat_id, 'Выберите продукт:', reply_markup=reply_markup)
         update_type.bot.delete_message(chat_id, update_type.message.message_id)
-    else:
-        return "HANDLE_MENU"
-    reply_markup = keyboards.get_menu_keyboards(_strapi_url)
-    update_type.bot.send_message(chat_id, 'Выберите продукт:', reply_markup=reply_markup)
     return "HANDLE_MENU"
 
 
@@ -62,8 +61,7 @@ def handle_menu(update: Update, context: CallbackContext):
 
     if query.data == 'cart':
         return show_cart(update, context)
-    
-    query.bot.delete_message(query.from_user.id, query.message.message_id)
+
     db.set('product_selected', query.data)
     product = functions.get_product(int(query.data), _strapi_url)
     image_url = urljoin(_strapi_url,
@@ -78,6 +76,7 @@ def handle_menu(update: Update, context: CallbackContext):
                 f"Описание: {product['attributes']['description']}",
         reply_markup=keyboards.get_product_reply_markup(),
     )
+    query.bot.delete_message(query.from_user.id, query.message.message_id)
     return "HANDLE_DESCRIPTION"
 
 
@@ -90,8 +89,8 @@ def handle_description(update: Update, context: CallbackContext):
     
     if query.data == 'cart':
         return show_cart(update, context)
-    
-    query.bot.delete_message(query.from_user.id, query.message.message_id)
+
+
     if db.exists('cart_id'):
         cart_id = db.get('cart_id').decode("utf-8")
     else:
@@ -104,6 +103,7 @@ def handle_description(update: Update, context: CallbackContext):
         query.from_user.id,
         'Продукт добавлен. Можете добавить еще один продукт или оформить заказ через корзину.',
         reply_markup=keyboards.get_menu_keyboards(_strapi_url))
+    query.bot.delete_message(query.from_user.id, query.message.message_id)
     return "HANDLE_MENU"
 
 
@@ -111,7 +111,6 @@ def show_cart(update: Update, context: CallbackContext):
     global _strapi_url
     db = get_database_connection()
     query = update.callback_query
-    query.bot.delete_message(query.from_user.id, query.message.message_id)
     url = urljoin(f'{_strapi_url}api/carts/', str(db.get('cart_id').decode("utf-8")))
     payload = {
         'fields[0]': 'tg_id',
@@ -147,6 +146,7 @@ def show_cart(update: Update, context: CallbackContext):
         query.from_user.id,
         message,
         reply_markup=InlineKeyboardMarkup([keys_for_delete, additional_keyboard]))
+    query.bot.delete_message(query.from_user.id, query.message.message_id)
     return "HANDLE_CART"
 
 
@@ -195,8 +195,6 @@ def waiting_email(update: Update, context: CallbackContext):
     user = functions.find_user(query.text, _strapi_url)
     if user:
         message = query.bot.send_message(query.from_user.id, f'Оплачено. :)))')
-        time.sleep(3)
-        query.bot.delete_message(query.from_user.id, message.message_id)
     else:
         # и если не находим - создаем юзера
         db = get_database_connection()
@@ -204,8 +202,8 @@ def waiting_email(update: Update, context: CallbackContext):
         message = query.bot.send_message(
             query.from_user.id,
             f'Пользователь добавлен в базу под ID {new_user_id}. Оплачено :)))')
-        time.sleep(3)
-        query.bot.delete_message(query.from_user.id, message.message_id)
+    time.sleep(3)
+    query.bot.delete_message(query.from_user.id, message.message_id)
     return show_menu(update, context)
 
 
@@ -254,11 +252,11 @@ def handle_users_reply(update, context):
     # Если вы вдруг не заметите, что python-telegram-bot перехватывает ошибки.
     # Оставляю этот try...except, чтобы код не падал молча.
     # Этот фрагмент можно переписать.
-    # try:
-    next_state = state_handler(update, context)
-    db.set(chat_id, next_state)
-    # except Exception as err:
-    #     print(err)
+    try:
+        next_state = state_handler(update, context)
+        db.set(chat_id, next_state)
+    except Exception as err:
+        print(err)
 
 
 def get_database_connection():
