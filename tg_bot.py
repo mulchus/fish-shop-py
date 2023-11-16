@@ -8,7 +8,7 @@ import redis
 import json
 import time
 import keyboards
-import functions
+import shop_functions
 
 from urllib.parse import urljoin
 
@@ -26,7 +26,7 @@ _strapi_url = ''
 def start(update: Update, context: CallbackContext):
     update.message.bot.delete_message(update.message.chat_id, update.message.message_id)
     db = get_database_connection()
-    cart = functions.find_cart(update.message.chat_id, _strapi_url)
+    cart = shop_functions.find_cart(update.message.chat_id, _strapi_url)
     try:
         cart_id = cart.json()['data'][0]['id']
         db.set('cart_id', cart_id)
@@ -49,16 +49,16 @@ def show_menu(update: Update, context: CallbackContext):
     update_type.bot.send_message(chat_id, 'Выберите продукт:', reply_markup=reply_markup)
 
     try:
-        first_message_id = int(db.get('first_message_id').decode("utf-8"))
-        last_message_id = int(db.get('last_message_id').decode("utf-8"))
+        first_message_id = int(db.get(f'first_message_id-{chat_id}').decode("utf-8"))
+        last_message_id = int(db.get(f'last_message_id-{chat_id}').decode("utf-8"))
         for message_id in range(first_message_id, last_message_id+1):
             try:
                 update_type.bot.delete_message(chat_id, message_id)
             except error.BadRequest:
                 pass
             finally:
-                db.set('first_message_id', '')
-                db.set('last_message_id', '')
+                db.set(f'first_message_id-{chat_id}', '')
+                db.set(f'last_message_id-{chat_id}', '')
     except (AttributeError, ValueError):
         update_type.bot.delete_message(chat_id, last_message_id)
 
@@ -74,7 +74,7 @@ def handle_menu(update: Update, context: CallbackContext):
         return show_cart(update, context)
 
     db.set('product_selected', query.data)
-    product = functions.get_product(int(query.data), _strapi_url)
+    product = shop_functions.get_product(int(query.data), _strapi_url)
     image_url = urljoin(_strapi_url,
                         product['attributes']['picture']['data']['attributes']['formats']['small']['url'])
     image = requests.get(image_url)
@@ -104,11 +104,11 @@ def handle_description(update: Update, context: CallbackContext):
     if db.exists('cart_id'):
         cart_id = db.get('cart_id').decode("utf-8")
     else:
-        cart_id = functions.create_cart(query.from_user.id, _strapi_url)
+        cart_id = shop_functions.create_cart(query.from_user.id, _strapi_url)
         db.set('cart_id', cart_id)
 
     # создаем объект CartProduct в корзине cart_id
-    functions.add_product_to_cart(cart_id, db.get('product_selected').decode("utf-8"), _strapi_url)
+    shop_functions.add_product_to_cart(cart_id, db.get('product_selected').decode("utf-8"), _strapi_url)
     query.bot.send_message(
         query.from_user.id,
         'Продукт добавлен. Можете добавить еще один продукт или оформить заказ через корзину.',
@@ -169,7 +169,7 @@ def handle_cart(update: Update, context: CallbackContext):
     db = get_database_connection()
     
     if query.data == 'pay':
-        db.set('first_message_id', query.message.message_id)
+        db.set(f'first_message_id-{query.from_user.id}', query.message.message_id)
         query.bot.send_message(query.from_user.id, 'Введите е-майл:')
         return 'WAITING_EMAIL'
     
@@ -183,6 +183,7 @@ def handle_cart(update: Update, context: CallbackContext):
     response = requests.get(url, params=payload)
     response.raise_for_status()
     delete_product = response.json()['data']['attributes']['product']['data']['attributes']
+    
     response = requests.delete(url)
     response.raise_for_status()
     bot_message = query.bot.send_message(
@@ -203,16 +204,16 @@ def waiting_email(update: Update, context: CallbackContext):
         
     # проверка наличия пользователя в БД по e_mail
     db = get_database_connection()
-    user = functions.find_user(query.text, _strapi_url)
+    user = shop_functions.find_user(query.text, _strapi_url)
     if user:
         message = query.bot.send_message(query.from_user.id, f'Оплачено. :)))')
     else:
         # и если не находим - создаем юзера
-        new_user_id = functions.add_user(db.get('cart_id').decode("utf-8"), query.text, _strapi_url)
+        new_user_id = shop_functions.add_user(db.get('cart_id').decode("utf-8"), query.text, _strapi_url)
         message = query.bot.send_message(
             query.from_user.id,
             f'Пользователь добавлен в базу под ID {new_user_id}. Оплачено :)))')
-    db.set('last_message_id', message['message_id'])
+    db.set(f'last_message_id-{query.from_user.id}', message['message_id'])
     return show_menu(update, context)
 
 

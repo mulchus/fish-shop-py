@@ -1,5 +1,5 @@
 from tg_bot import get_database_connection
-from functions import get_product
+from shop_functions import get_product
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
