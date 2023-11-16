@@ -66,7 +66,6 @@ def show_menu(update: Update, context: CallbackContext):
 
 
 def handle_menu(update: Update, context: CallbackContext):
-    global _strapi_url
     db = get_database_connection()
     query = update.callback_query
 
@@ -118,7 +117,6 @@ def handle_description(update: Update, context: CallbackContext):
 
 
 def show_cart(update: Update, context: CallbackContext):
-    global _strapi_url
     db = get_database_connection()
     query = update.callback_query
     url = urljoin(f'{_strapi_url}api/carts/', str(db.get('cart_id').decode("utf-8")))
