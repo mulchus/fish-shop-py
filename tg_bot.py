@@ -120,16 +120,7 @@ def show_cart(update: Update, context: CallbackContext):
     db = get_database_connection()
     query = update.callback_query
     url = urljoin(f'{_strapi_url}api/carts/', str(db.get('cart_id').decode("utf-8")))
-    payload = {
-        'fields[0]': 'tg_id',
-        'populate[cartproducts][fields][0]': 'weight',
-        'populate[cartproducts][populate][product][fields][0]': 'title',
-        'populate[cartproducts][populate][product][fields][1]': 'price',
-        'populate[cartproducts][populate][product][fields][2]': 'description',
-    }
-    response = requests.get(url, params=payload)
-    response.raise_for_status()
-    cartproducts = response.json()['data']['attributes']['cartproducts']['data']
+    cartproducts = shop_functions.get_cartproducts(url)
     message = ''
     keys_for_delete = []
     ids_for_delete = {}
@@ -173,15 +164,7 @@ def handle_cart(update: Update, context: CallbackContext):
     
     id_for_delete = json.loads(db.get('ids_for_delete').decode("utf-8"))[query.data]
     url = urljoin(f'{_strapi_url}api/cartproducts/', id_for_delete)
-    payload = {
-        'fields[0]': 'id',
-        'populate[product][fields][0]': 'title',
-        'populate[product][fields][1]': 'price',
-    }
-    response = requests.get(url, params=payload)
-    response.raise_for_status()
-    delete_product = response.json()['data']['attributes']['product']['data']['attributes']
-    
+    delete_product = shop_functions.get_delete_product(url)
     response = requests.delete(url)
     response.raise_for_status()
     bot_message = query.bot.send_message(

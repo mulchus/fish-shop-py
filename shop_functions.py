@@ -3,6 +3,30 @@ import requests
 from urllib.parse import urljoin
 
 
+def get_cartproducts(url):
+    payload = {
+        'fields[0]': 'tg_id',
+        'populate[cartproducts][fields][0]': 'weight',
+        'populate[cartproducts][populate][product][fields][0]': 'title',
+        'populate[cartproducts][populate][product][fields][1]': 'price',
+        'populate[cartproducts][populate][product][fields][2]': 'description',
+    }
+    response = requests.get(url, params=payload)
+    response.raise_for_status()
+    return response.json()['data']['attributes']['cartproducts']['data']
+
+
+def get_delete_product(url):
+    payload = {
+        'fields[0]': 'id',
+        'populate[product][fields][0]': 'title',
+        'populate[product][fields][1]': 'price',
+    }
+    response = requests.get(url, params=payload)
+    response.raise_for_status()
+    return response.json()['data']['attributes']['product']['data']['attributes']
+    
+
 def get_product(product_id, strapi_url):
     payload = {
             'populate': 'picture',
